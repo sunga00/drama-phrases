@@ -1,6 +1,7 @@
 """
 Language Reactor Excel 자막 파일 파서.
-시트: Subtitles, 열: Time / Subtitle / Human Translation / Transliteration
+시트: Subtitles, 열: Time / Subtitle / Human Translation [/ Transliteration]
+Transliteration 열은 선택 사항 (영어 파일에 없음).
 """
 
 import re
@@ -22,9 +23,18 @@ def _parse_time(raw: str) -> int:
 
 _STAGE_DIR = re.compile(r"^[（(【\[]")  # 전각/반각 괄호로 시작하는 무대 지문
 
+# 영어 CC 자막의 화자 이름 패턴: "ADULT SHELDON: " / "MARY: " 등
+_SPEAKER_TAG = re.compile(r"^[A-Z][A-Z0-9 \.]+:\s+")
+
 
 def _is_stage_direction(text: str) -> bool:
     return bool(_STAGE_DIR.match(text.strip()))
+
+
+def _strip_speaker(text: str) -> str:
+    """CC 자막 화자 이름(대문자+콜론) 제거. 제거 후 빈 문자열이면 원본 반환."""
+    stripped = _SPEAKER_TAG.sub("", text).strip()
+    return stripped if stripped else text
 
 
 def _normalize_reading(raw: str) -> str:
@@ -42,27 +52,33 @@ def parse_xlsx(path: str) -> list[dict]:
     xlsx 파일을 파싱해 정제된 대사 리스트를 반환.
 
     반환 형식: [{"time_s": int, "text": str, "ko": str, "reading": str}, ...]
+    Transliteration 열이 없는 파일(영어 등)은 reading = "".
     """
     df = pd.read_excel(path, sheet_name="Subtitles", dtype=str)
 
     # 열 이름 공백 트림
     df.columns = [c.strip() for c in df.columns]
 
-    required = {"Time", "Subtitle", "Human Translation", "Transliteration"}
+    required = {"Time", "Subtitle", "Human Translation"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"필수 열 없음: {missing}")
+
+    has_reading = "Transliteration" in df.columns
 
     rows = []
     for _, row in df.iterrows():
         text = str(row.get("Subtitle", "")).strip()
         ko_raw = str(row.get("Human Translation", "")).strip()
-        reading_raw = str(row.get("Transliteration", "")).strip()
+        reading_raw = str(row.get("Transliteration", "")).strip() if has_reading else ""
         time_raw = str(row.get("Time", "")).strip()
 
         # 빈 행, NaN 행 제거
         if not text or text in ("nan", "NaN"):
             continue
+
+        # 화자 이름 태그 제거 (영어 CC 자막: "MARY: ..." → "...")
+        text = _strip_speaker(text)
 
         # 무대 지문 행 제거
         if _is_stage_direction(text):

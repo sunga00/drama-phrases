@@ -26,21 +26,35 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-def _build_system_prompt(profile: LanguageProfile) -> str:
+_MIN_LEVEL_INSTRUCTION = {
+    "중급 이상만": "⚠️ 기초(CEFR A1-A2 / HSK 1-2 / JLPT N5-N4) 수준 표현은 제외하고 중급·고급만 선별하세요.",
+    "고급만":      "⚠️ 기초·중급 수준 표현은 제외하고 고급만 선별하세요.",
+}
+
+
+def _build_system_prompt(profile: LanguageProfile, min_level: str = "기초부터 전부") -> str:
+    level_note = _MIN_LEVEL_INSTRUCTION.get(min_level, "")
+    level_line = f"\n{level_note}" if level_note else ""
     return f"""\
 너는 {profile.display_name} 학습 콘텐츠 큐레이터다. 드라마 자막 대사 목록에서
-'일상 대화에서 그대로 쓸 수 있는 실용 표현'만 선별한다.
+'일상 대화에서 그대로 쓸 수 있는 실용 표현'만 선별한다.{level_line}
 
 {profile.selection_rules}
 
 각 표현에 부가할 정보:
+- type: "표현" | "문형"
+    "표현" — 그대로 쓸 수 있는 완성형 (단어·관용구·완성 문장 포함).
+             짧은 부사·접속사(反正, 顺便, 明明 등)도 "표현".
+    "문형" — 빈칸(…)이 있어 상황에 맞게 채워 써야 하는 패턴.
+             text 필드에 … 를 사용해 빈칸을 표시.
+             (예: "这不是…的问题", "只要…，怎么都行")
 - level: "기초" | "중급" | "고급"
 - usage_note: 어떤 상황에서 쓰는지 한 줄 (한국어)
 - example_orig: 드라마 밖 일상 응용 예문 ({profile.display_name})
 - example_ko: 예문 한국어 번역
 
 응답은 반드시 아래 JSON 배열만 출력. 마크다운 코드펜스 금지.
-[{{"text":"...","reading":"...","ko":"...","level":"...",
+[{{"text":"...","reading":"...","ko":"...","type":"표현","level":"...",
   "usage_note":"...","example_orig":"...","example_ko":"...",
   "source_time_s":0}}]"""
 
@@ -76,6 +90,7 @@ def analyze(
     rows: list[dict],
     lang: str = "zh",
     progress_callback=None,
+    min_level: str = "기초부터 전부",
 ) -> list[dict]:
     """
     파싱된 대사 rows를 Claude API로 분석해 실용 표현 목록을 반환.
@@ -84,7 +99,7 @@ def analyze(
     """
     profile = get_profile(lang)
     client = _get_client()
-    system_prompt = _build_system_prompt(profile)
+    system_prompt = _build_system_prompt(profile, min_level)
 
     chunks = [rows[i : i + CHUNK_SIZE] for i in range(0, len(rows), CHUNK_SIZE)]
     total = len(chunks)
