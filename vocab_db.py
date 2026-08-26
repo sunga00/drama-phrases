@@ -14,10 +14,19 @@ import psycopg2
 import psycopg2.extras
 
 
+def _get_secret(key: str) -> str:
+    """st.secrets(Streamlit Cloud) 우선, 없으면 os.environ(로컬 .env) 폴백."""
+    try:
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, "")
+
+
 def _dsn() -> str:
-    url = os.environ.get("SUPABASE_DB_URL")
+    url = _get_secret("SUPABASE_DB_URL")
     if not url:
-        raise RuntimeError("SUPABASE_DB_URL이 .env에 설정되지 않았습니다.")
+        raise RuntimeError("SUPABASE_DB_URL이 설정되지 않았습니다.")
     return url
 
 

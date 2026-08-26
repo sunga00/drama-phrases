@@ -19,10 +19,18 @@ MODEL = "claude-sonnet-4-6"
 _client: anthropic.Anthropic | None = None
 
 
+def _get_api_key() -> str:
+    try:
+        import streamlit as st
+        return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        return os.environ.get("ANTHROPIC_API_KEY", "")
+
+
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        _client = anthropic.Anthropic(api_key=_get_api_key())
     return _client
 
 
